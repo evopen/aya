@@ -342,9 +342,23 @@ fn resolve_symbol(path: &str, symbol: &str) -> Result<u64, ResolveSymbolError> {
     let data = fs::read(path)?;
     let obj = object::read::File::parse(&*data)?;
 
-    let sym = obj
+    let debuglink: Option<_> = obj.gnu_debuglink()?.map(|(b, _)| {
+        let path = Path::new(path)
+            .parent()
+            .unwrap()
+            .join(std::str::from_utf8(b).unwrap());
+        let data = fs::read(path).unwrap();
+        data
+    });
+    let debuglink_obj = debuglink
+        .as_ref()
+        .map(|data| object::read::File::parse(&**data).unwrap());
+
+    let debuginfo_obj = debuglink_obj.as_ref().unwrap_or(&obj);
+
+    let sym = debuginfo_obj
         .dynamic_symbols()
-        .chain(obj.symbols())
+        .chain(debuginfo_obj.symbols())
         .find(|sym| sym.name().map(|name| name == symbol).unwrap_or(false))
         .ok_or_else(|| ResolveSymbolError::Unknown(symbol.to_string()))?;
 
